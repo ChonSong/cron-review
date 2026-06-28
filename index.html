@@ -1,0 +1,375 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Hermes Cron Audit — June 28 2026</title>
+<style>
+:root {
+  --bg: #0b0e11;
+  --surface: #14181d;
+  --surface2: #1a1f26;
+  --border: #252b33;
+  --text: #c8cdd4;
+  --text-dim: #6b7280;
+  --accent: #4da6ff;
+  --ok: #22c55e;
+  --warn: #f59e0b;
+  --err: #ef4444;
+  --info: #6366f1;
+  --radius: 8px;
+  --radius-sm: 4px;
+  --mono: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+  --sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html { background: var(--bg); color: var(--text); font-family: var(--sans); font-size: 15px; line-height: 1.6; }
+body { max-width: 1400px; margin: 0 auto; padding: 32px 24px; }
+
+/* Header */
+.header { display: flex; flex-wrap: wrap; gap: 20px; align-items: flex-start; justify-content: space-between; margin-bottom: 28px; }
+.header h1 { font-size: 2rem; font-weight: 700; letter-spacing: -0.02em; color: #fff; }
+.header .sub { font-size: 0.85rem; color: var(--text-dim); }
+.stats-bar { display: flex; gap: 12px; flex-wrap: wrap; }
+.stat-card {
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 12px 18px; text-align: center; min-width: 80px;
+}
+.stat-card .num { font-family: var(--mono); font-size: 1.6rem; font-weight: 700; }
+.stat-card .label { font-size: 0.72rem; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.06em; margin-top: 2px; }
+
+/* Filters */
+.filters { display: flex; gap: 8px; margin-bottom: 20px; flex-wrap: wrap; }
+.filter-btn { padding: 6px 14px; border-radius: 20px; border: 1px solid var(--border); background: var(--surface); color: var(--text-dim); cursor: pointer; font-size: 0.82rem; transition: all 0.15s; }
+.filter-btn:hover { border-color: var(--accent); color: var(--text); }
+.filter-btn.active { background: var(--accent); color: #000; border-color: var(--accent); font-weight: 600; }
+.search-input { margin-left: auto; padding: 6px 14px; border-radius: 20px; border: 1px solid var(--border); background: var(--surface); color: var(--text); font-size: 0.82rem; min-width: 220px; outline: none; }
+.search-input:focus { border-color: var(--accent); }
+.search-input::placeholder { color: var(--text-dim); }
+
+/* Timeline */
+.schedule-vis { margin-bottom: 28px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px; overflow-x: auto; }
+.schedule-vis h2 { font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-dim); margin-bottom: 12px; }
+.timeline { position: relative; height: 180px; }
+.timeline-hours { display: flex; justify-content: space-between; font-size: 0.7rem; color: var(--text-dim); margin-bottom: 4px; padding: 0 2px; }
+.timeline-lane { position: relative; height: 28px; margin: 6px 0; }
+.timeline-lane .lane-label { position: absolute; left: -90px; top: 4px; font-size: 0.68rem; color: var(--text-dim); white-space: nowrap; width: 86px; text-align: right; }
+.timeline-lane .lane-body { position: relative; margin-left: 96px; height: 100%; background: var(--surface2); border-radius: var(--radius-sm); }
+.timeline-dot {
+  position: absolute; width: 8px; height: 8px; border-radius: 50%; top: 10px;
+  transform: translateX(-50%); cursor: pointer; transition: transform 0.15s;
+}
+.timeline-dot:hover { transform: translateX(-50%) scale(1.8); z-index: 10; }
+.timeline-dot.ok { background: var(--ok); }
+.timeline-dot.err { background: var(--err); }
+.timeline-grid { position: absolute; top: 0; left: 96px; right: 0; bottom: 0; display: flex; }
+.timeline-grid div { flex: 1; border-left: 1px solid rgba(255,255,255,0.03); }
+.timeline-now { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--accent); opacity: 0.6; }
+.legend { display: flex; gap: 16px; margin-top: 10px; font-size: 0.72rem; color: var(--text-dim); }
+.legend span { display: inline-flex; align-items: center; gap: 4px; }
+.legend .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; }
+
+/* Job list */
+.job-list { display: flex; flex-direction: column; gap: 10px; }
+.job-card {
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 16px 20px; transition: border-color 0.15s;
+}
+.job-card:hover { border-color: #3b4450; }
+.job-card.hidden { display: none; }
+.job-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 8px; }
+.job-name { font-weight: 600; font-size: 1rem; color: #e5e7eb; }
+.job-id { font-family: var(--mono); font-size: 0.68rem; color: var(--text-dim); }
+.job-meta { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.badge {
+  font-size: 0.7rem; padding: 2px 10px; border-radius: 20px; font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.04em;
+}
+.badge.ok { background: #166534; color: #4ade80; }
+.badge.err { background: #7f1d1d; color: #fca5a5; }
+.badge.warn { background: #713f12; color: #fcd34d; }
+.badge.dead { background: #1e1b4b; color: #a5b4fc; }
+.tag {
+  font-size: 0.7rem; padding: 2px 8px; border-radius: 4px;
+  background: var(--surface2); color: var(--text-dim); border: 1px solid var(--border);
+}
+.tag.deliver { background: #1e293b; color: #93c5fd; border-color: #1e3a5f; }
+.job-desc { font-size: 0.82rem; color: var(--text-dim); margin: 6px 0; line-height: 1.5; }
+.job-detail { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 6px 16px; font-size: 0.78rem; margin-top: 8px; }
+.job-detail dt { color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.04em; font-size: 0.66rem; }
+.job-detail dd { color: var(--text); font-family: var(--mono); font-size: 0.76rem; }
+.job-detail .error-text { color: var(--err); grid-column: 1 / -1; font-family: var(--mono); font-size: 0.73rem; background: rgba(239,68,68,0.08); padding: 6px 10px; border-radius: var(--radius-sm); border-left: 2px solid var(--err); line-height: 1.4; }
+.job-skills { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 4px; }
+.skill-tag { font-size: 0.66rem; padding: 1px 8px; border-radius: 3px; background: rgba(99,102,241,0.15); color: #a5b4fc; }
+.no-agent-tag { font-size: 0.68rem; padding: 2px 8px; border-radius: 3px; background: rgba(245,158,11,0.15); color: #fcd34d; }
+.collapse-btn { font-size: 0.72rem; color: var(--accent); cursor: pointer; background: none; border: none; margin-top: 4px; padding: 2px 0; }
+.collapse-btn:hover { text-decoration: underline; }
+
+/* Responsive */
+@media (max-width: 900px) {
+  .header { flex-direction: column; }
+  .stats-bar { justify-content: flex-start; }
+  .search-input { margin-left: 0; width: 100%; }
+  .job-detail { grid-template-columns: 1fr 1fr; }
+}
+
+/* Footer */
+.footer { margin-top: 40px; padding-top: 16px; border-top: 1px solid var(--border); font-size: 0.72rem; color: var(--text-dim); }
+.footer a { color: var(--accent); text-decoration: none; }
+.footer a:hover { text-decoration: underline; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div>
+    <h1>Hermes Cron Audit</h1>
+    <p class="sub">Generated 2026-06-28 20:25 AEST · Gateway PID 596 · 15h uptime</p>
+  </div>
+  <div class="stats-bar">
+    <div class="stat-card"><div class="num" style="color:#e5e7eb">42</div><div class="label">Total Jobs</div></div>
+    <div class="stat-card"><div class="num" style="color:var(--ok)">29</div><div class="label">Healthy</div></div>
+    <div class="stat-card"><div class="num" style="color:var(--err)">13</div><div class="label">Errors</div></div>
+    <div class="stat-card"><div class="num" style="color:var(--warn)">69%</div><div class="label">Health Rate</div></div>
+    <div class="stat-card"><div class="num" style="color:var(--info)">20</div><div class="label">no-agent</div></div>
+  </div>
+</div>
+
+<div class="filters">
+  <button class="filter-btn active" data-filter="all">All (42)</button>
+  <button class="filter-btn" data-filter="healthy">Healthy (29)</button>
+  <button class="filter-btn" data-filter="error">Errors (13)</button>
+  <button class="filter-btn" data-filter="error-symlink">Dead Symlinks (5)</button>
+  <button class="filter-btn" data-filter="error-api">API / Auth (4)</button>
+  <button class="filter-btn" data-filter="error-network">Network (2)</button>
+  <button class="filter-btn" data-filter="error-data">Data Bugs (1)</button>
+  <input type="text" class="search-input" placeholder="Search jobs…" id="search">
+</div>
+
+<div class="schedule-vis">
+  <h2>24-Hour Schedule Map</h2>
+  <div class="timeline">
+    <div class="timeline-hours"><span>00</span><span>02</span><span>04</span><span>06</span><span>08</span><span>10</span><span>12</span><span>14</span><span>16</span><span>18</span><span>20</span><span>22</span></div>
+    <div class="timeline-lane" id="lane-daily"><div class="lane-label">Daily</div><div class="lane-body"><div class="timeline-grid"><div></div><div></div><div></div><div></div><div></div><div></div><div></div><div></div><div></div><div></div><div></div><div></div><div></div><div></div><div></div><div></div><div></div><div></div><div></div><div></div><div></div><div></div><div></div><div></div></div></div></div>
+    <div class="timeline-lane" id="lane-subhourly"><div class="lane-label">Sub-hourly</div><div class="lane-body"><div class="timeline-grid"><div></div><div></div><div></div><div></div><div></div><div></div><div></div><div></div><div></div><div></div><div></div><div></div><div></div><div></div><div></div><div></div><div></div><div></div><div></div><div></div><div></div><div></div><div></div><div></div></div></div></div>
+    <div class="timeline-lane" id="lane-weekly"><div class="lane-label">Weekly</div><div class="lane-body"><div class="timeline-grid"><div></div><div></div><div></div><div></div><div></div><div></div><div></div><div></div><div></div><div></div><div></div><div></div><div></div><div></div><div></div><div></div><div></div><div></div><div></div><div></div><div></div><div></div><div></div><div></div></div></div></div>
+  </div>
+  <div class="legend">
+    <span><b class="dot" style="background:var(--ok)"></b> Healthy</span>
+    <span><b class="dot" style="background:var(--err)"></b> Error</span>
+    <span><b class="dot" style="background:var(--accent);width:2px;border-radius:1px"></b> Now</span>
+  </div>
+</div>
+
+<div class="job-list" id="job-list"></div>
+
+<div class="footer">
+  <p>Built by Hermes Agent · <a href="https://github.com/ChonSong">ChonSong</a> · Data from <code>hermes cron list</code> + <code>hermes gateway status</code></p>
+  <p style="margin-top:4px">Key: <span style="color:var(--err)">API/auth/budget errors</span> are credit/payment issues. <span style="color:var(--info)">Dead symlinks</span> are missing scripts. <span style="color:var(--warn)">Network errors</span> are connection failures. <span style="color:var(--err)">Data bugs</span> are logic errors in script code.</p>
+</div>
+
+<script>
+const JOBS = [
+{"id":"0175050d9c29","name":"Memory Curation","schedule":"0 16 * * *","freq":"daily 16:00 AEST","repeat":"56/100","next":"2026-06-29T16:00:00+10:00","deliver":"local","skills":["productivity-caveman-compress","knowledge-management-data-export-to-wiki"],"last":"2026-06-28T16:04:56+10:00","status":"ok","category":"healthy","desc":"Daily memory compression and data export curation. Compresses caveman-formatted memory entries and exports Notion/workspace knowledge graph.","note":"","error":""},
+{"id":"56685e569e5f","name":"Morning Briefing","schedule":"0 7 * * *","freq":"daily 07:00 AEST","repeat":"47/100","next":"2026-06-29T07:00:00+10:00","deliver":"origin","skills":["morning-briefing"],"last":"2026-06-28T07:02:27+10:00","status":"ok","category":"healthy","desc":"Generates a comprehensive morning briefing with world news, weather, calendar, and priority tasks. Uses morning-briefing skill for LLM-driven content curation.","note":"","error":""},
+{"id":"ad90af79146c","name":"Hermes Full Backup — Docker Image","schedule":"0 17 * * *","freq":"daily 17:00 AEST","repeat":"37/999","next":"2026-06-29T17:00:00+10:00","deliver":"local","skills":["devops-hermes-backup-script","hermes-docker-workflow"],"last":"2026-06-28T17:08:30+10:00","status":"ok","category":"healthy","desc":"Runs hermes-backup.sh to create a full filesystem archive backup, then pushes the Hermes Docker image to GHCR. Workdir: ~/.hermes","note":"Workdir: ~/.hermes","error":""},
+{"id":"e4d95660ab35","name":"seans-reporepo refresh","schedule":"0 9 * * 1","freq":"weekly Mon 09:00 AEST","repeat":"∞","next":"2026-06-29T09:00:00+10:00","deliver":"local","skills":[],"last":"2026-06-22T09:00:36+10:00","status":"error","category":"error-network","desc":"Pulls latest from seans-reporepo, regenerates the repo catalog. Uses gh CLI to fetch owned repos.","note":"Transient DNS failure — likely not recurring.","error":"fatal: unable to access github.com: Could not resolve host"},
+{"id":"64280d3687bf","name":"context-budget-audit","schedule":"0 9 1 * *","freq":"monthly 1st 09:00 UTC","repeat":"∞","next":"2026-07-01T09:00:00+00:00","deliver":"local","skills":["devops-context-budget"],"last":"2026-06-01T09:03:56+00:00","status":"ok","category":"healthy","desc":"Monthly audit of context window consumption across loaded skills, agent prompts, and cron jobs. Identifies bloat and suggests trimming.","note":"Delivery was reconfigured from origin→local after a delivery failure.","error":""},
+{"id":"65520f7d71f9","name":"skill-selector-prep (weekly)","schedule":"0 6 * * 0","freq":"weekly Sun 06:00 AEST","repeat":"∞","next":"2026-07-05T06:00:00+10:00","deliver":"local","skills":[],"last":"2026-06-28T06:00:19+10:00","status":"ok","category":"healthy","desc":"Weekly preparation of the skill selector: syncs remote skill definitions, rebuilds skill embeddings, and updates keyword→skill mapping.","note":"no-agent: runs skill-selector-prep.py","error":""},
+{"id":"5b47d796f26f","name":"html-in-canvas-api-monitor","schedule":"0 9 * * 1","freq":"weekly Mon 09:00 AEST","repeat":"∞","next":"2026-06-29T09:00:00+10:00","deliver":"local","skills":["devops-canary-watch"],"last":"2026-06-22T09:02:09+10:00","status":"error","category":"error-network","desc":"Monitors the html-in-canvas API endpoint for availability and correctness. Part of the canary-watch infrastructure.","note":"Needs investigation — what endpoint is it hitting?","error":"RuntimeError: Connection error"},
+{"id":"166753e315ea","name":"GTO Wizard QA Sweep","schedule":"0 */4 * * *","freq":"every 4h","repeat":"206/999","next":"2026-06-28T20:00:00+10:00","deliver":"local","skills":["gto-wizard-qa-loop","playwright","devops-canary-watch"],"last":"2026-06-28T16:00:56+10:00","status":"ok","category":"healthy","desc":"Comprehensive QA sweep of the GTO Wizard clone: runs Playwright E2E tests, canary health checks, and validates solver output correctness.","note":"Highest-complexity LLM cron. 206 successful runs.","error":""},
+{"id":"b4f35d68ede1","name":"player-development-loop","schedule":"0 * * * *","freq":"hourly","repeat":"∞","next":"2026-06-28T18:00:00+10:00","deliver":"local","skills":["player-agent"],"last":"2026-06-28T17:31:59+10:00","status":"ok","category":"healthy","desc":"Core autonomous development loop: the Player agent picks up the next task from the dev loop, implements it, and commits. Workdir: autonomous-dev-system.","note":"Workdir: /home/sc/repos/autonomous-dev-system","error":""},
+{"id":"ed2a80c4636e","name":"HWC Health Audit","schedule":"0 18 * * *","freq":"daily 18:00 AEST","repeat":"∞","next":"2026-06-28T18:00:00+10:00","deliver":"local","skills":["devops-go","svelte-development","devops-code-quality-audit","devops-deployment-audit"],"last":"2026-06-27T18:04:57+10:00","status":"error","category":"error-api","desc":"Daily health audit for the HWC project: Go build tests, Svelte frontend checks, code quality audit, and deployment verification.","note":"Needs backoff/retry logic added.","error":"HTTP 429: Rate limit exceeded"},
+{"id":"29347c54bf6a","name":"GTO Deploy Log Rotation","schedule":"0 6 * * *","freq":"daily 06:00 AEST","repeat":"∞","next":"2026-06-29T06:00:00+10:00","deliver":"local","skills":[],"last":"2026-06-28T06:00:16+10:00","status":"ok","category":"healthy","desc":"Rotates and compresses deployment logs for the GTO Wizard clone. Old logs are gzipped and archived to prevent disk bloat.","note":"no-agent: runs gto-logrotate.sh","error":""},
+{"id":"5e1bba516d87","name":"coach-development-loop","schedule":"5,35 * * * *","freq":"twice-hourly (:05, :35)","repeat":"∞","next":"2026-06-28T17:35:00+10:00","deliver":"local","skills":["coach-agent"],"last":"2026-06-28T17:32:01+10:00","status":"error","category":"error-api","desc":"Autonomous Coach agent that reviews Player commits, plans next tasks, and maintains the dev loop task queue. Most critical autonomous dev cron.","note":"Model: minimax/m2.5 via openrouter. Only 6K tokens available, needs ~32K. Switch to free-tier model or top up credits.","error":"HTTP 402: OpenRouter credits exhausted. Can afford 6K tokens, requested 32K (minimax/m2.5)"},
+{"id":"752d51adb96d","name":"Polytopia deploy loop","schedule":"every 30m","freq":"every 30min","repeat":"∞","next":"2026-06-28T17:51:24+10:00","deliver":"local","skills":[],"last":"2026-06-28T17:21:24+10:00","status":"error","category":"error-symlink","desc":"Deploys the Polytopia Clone game to production. Checks for new commits and rebuilds/redeploys as needed.","note":"Symlink → dead target. Archive copy at ~/repos/archive/hermes-sync/scripts/.","error":"Blocked: script path outside ~/.hermes/scripts/: 'deploy-polytopia.sh'"},
+{"id":"db0a0cecb971","name":"Night Health Snapshot","schedule":"0 23 * * *","freq":"daily 23:00 AEST","repeat":"∞","next":"2026-06-28T23:00:00+10:00","deliver":"local","skills":[],"last":"2026-06-27T23:00:53+10:00","status":"ok","category":"healthy","desc":"Takes a system-wide health snapshot: disk usage, memory, running processes, cron status, and gateway health.","note":"no-agent: runs night-health-snapshot.py","error":""},
+{"id":"bd4cecc76077","name":"Night DB Compaction","schedule":"0 2 * * *","freq":"daily 02:00 AEST","repeat":"∞","next":"2026-06-29T02:00:00+10:00","deliver":"local","skills":[],"last":"2026-06-28T02:01:59+10:00","status":"ok","category":"healthy","desc":"Compacts Hermes' session and memory databases: runs VACUUM, rebuilds FTS5 indexes, and prunes old entries.","note":"no-agent: runs night-db-compact.py","error":""},
+{"id":"aa0b2cde6de1","name":"weekly-repo-research-briefing","schedule":"0 9 * * 1","freq":"weekly Mon 09:00 AEST","repeat":"∞","next":"2026-06-29T09:00:00+10:00","deliver":"local","skills":[],"last":"2026-06-22T09:00:15+10:00","status":"ok","category":"healthy","desc":"Weekly research briefing: scans GitHub trending, new OSS releases, and repo updates relevant to current projects.","note":"no-agent: runs weekly-repo-research-briefing.py","error":""},
+{"id":"5d06462b5271","name":"gto-wizard-health-check (LLM)","schedule":"0 */6 * * *","freq":"every 6h","repeat":"∞","next":"2026-06-28T18:00:00+10:00","deliver":"local","skills":["devops-gto-wizard-deployment","devops-canary-watch"],"last":"2026-06-28T12:09:54+10:00","status":"error","category":"error-api","desc":"Runs make health-check in the GTO Wizard clone and uses LLM to interpret results. Validates frontend, backend, solver, and E2E test status.","note":"Workdir: /home/sc/repos/gto-wizard-clone. Check opencode-zen API key. Has a working duplicate (no-agent version).","error":"HTTP 401: Invalid API key (opencode-zen provider, deepseek-v4-flash-free)"},
+{"id":"4961f5714c31","name":"cron-healer","schedule":"*/30 * * * *","freq":"every 30min","repeat":"∞","next":"2026-06-28T18:00:00+10:00","deliver":"local","skills":[],"last":"2026-06-28T17:30:24+10:00","status":"error","category":"error-symlink","desc":"Programmatic no-LLM fallback that detects and heals broken cron jobs: restarts stuck ones, alerts on repeated failures.","note":"Symlink → dead target. Script file doesn't exist anywhere on disk.","error":"Blocked: script path outside ~/.hermes/scripts/: 'cron-healer.py'"},
+{"id":"e353ec3108b6","name":"Daily Seek Search","schedule":"0 7 * * *","freq":"daily 07:00 AEST","repeat":"∞","next":"2026-06-29T07:00:00+10:00","deliver":"local","skills":[],"last":"2026-06-28T07:00:21+10:00","status":"ok","category":"healthy","desc":"Scrapes Seek.com.au for new job listings matching data science / ML roles. Uses Scrapling for free scraping.","note":"no-agent: runs seek-scrapling-search.py","error":""},
+{"id":"bdbfb3d0bfd8","name":"Daily Indeed Search","schedule":"30 7 * * *","freq":"daily 07:30 AEST","repeat":"∞","next":"2026-06-29T07:30:00+10:00","deliver":"local","skills":[],"last":"2026-06-28T07:30:19+10:00","status":"ok","category":"healthy","desc":"Scrapes Indeed.com.au for new job listings. Staggered 30min after Seek to avoid rate-limiting overlap.","note":"no-agent: runs indeed-scrapling-search.py","error":""},
+{"id":"b46255a1ad22","name":"Daily Job Pipeline","schedule":"0 8 * * *","freq":"daily 08:00 AEST","repeat":"∞","next":"2026-06-29T08:00:00+10:00","deliver":"local","skills":[],"last":"2026-06-28T08:00:17+10:00","status":"ok","category":"healthy","desc":"Aggregates job search results, filters by relevance, formats applications, and produces a daily job pipeline summary.","note":"no-agent: runs daily-job-pipeline.py","error":""},
+{"id":"a773daee3f7d","name":"Dev Loop Log Rotation","schedule":"0 6 * * *","freq":"daily 06:00 AEST","repeat":"∞","next":"2026-06-29T06:00:00+10:00","deliver":"local","skills":[],"last":"2026-06-28T06:00:16+10:00","status":"error","category":"error-symlink","desc":"Rotates development loop logs: archives stale logs, compresses old runs, and prevents the dev-loop directory from growing unbounded.","note":"Symlink → dead target. Script file doesn't exist anywhere on disk.","error":"Blocked: script path outside ~/.hermes/scripts/: 'rotate-dev-loop-logs.py'"},
+{"id":"38a9145e2062","name":"skill-auto-archive","schedule":"0 5 * * 0","freq":"weekly Sun 05:00 AEST","repeat":"∞","next":"2026-07-05T05:00:00+10:00","deliver":"local","skills":[],"last":"2026-06-28T05:00:15+10:00","status":"ok","category":"healthy","desc":"Weekly archival of stale/unused skills. Moves skills that haven't been loaded in 30+ days to an archive directory.","note":"no-agent: runs skill-auto-archive.py","error":""},
+{"id":"d995048fa26d","name":"skill-discovery","schedule":"0 4 * * 1","freq":"weekly Mon 04:00 AEST","repeat":"∞","next":"2026-06-29T04:00:00+10:00","deliver":"local","skills":["hermes-agent","find-skills","skill-creator","hermes-agent-skill-authoring"],"last":"2026-06-22T04:09:53+10:00","status":"ok","category":"healthy","desc":"Weekly skill discovery: scans the ecosystem for new candidate skills, evaluates their quality, and creates SKILL.md drafts for curator review.","note":"LLM-driven with 4 skills loaded.","error":""},
+{"id":"57ee4a02789b","name":"Nightly SkillSpector Security Scan","schedule":"0 2 * * *","freq":"daily 02:00 AEST","repeat":"∞","next":"2026-06-29T02:00:00+10:00","deliver":"local","skills":[],"last":"2026-06-28T02:00:15+10:00","status":"ok","category":"healthy","desc":"Runs a security scan across all installed skills: checks for suspicious patterns, prompt injection vectors, and known vulnerable dependencies.","note":"no-agent: runs security-scan.sh","error":""},
+{"id":"83e9c3a48cff","name":"Self-Improvement Engine","schedule":"0 */48 * * *","freq":"every 48h","repeat":"∞","next":"2026-06-29T00:00:00+10:00","deliver":"local","skills":["self-improvement-engine","hermes-agent-skill-authoring","skill-creator"],"last":"2026-06-27T00:35:13+10:00","status":"ok","category":"healthy","desc":"Closes the feedback loop: analyzes recent sessions, identifies patterns, and generates skill improvements. Every 48 hours.","note":"Workdir: /home/sc/repos/autonomous-dev-system/sie","error":""},
+{"id":"2e2e8fd7f3e5","name":"3DCP Landscape Monitor","schedule":"every 10080m","freq":"every 7 days","repeat":"∞","next":"2026-06-30T14:11:27+10:00","deliver":"origin","skills":[],"last":null,"status":"ok","category":"healthy","desc":"Weekly landscape monitoring of Australian 3D Concrete Printing: tracks new research, companies, regulations, and patent filings.","note":"no-agent: runs 3dcp-monitor.py. New job — first run pending.","error":""},
+{"id":"3196a93364b8","name":"deploy-verify","schedule":"*/30 * * * *","freq":"every 30min","repeat":"∞","next":"2026-06-28T18:00:00+10:00","deliver":"local","skills":[],"last":"2026-06-28T17:30:24+10:00","status":"error","category":"error-symlink","desc":"Verifies that deployed web applications are serving correct content. Checks HTTP status, content hashes, and JS console errors.","note":"Symlink → dead target. Script file doesn't exist anywhere on disk.","error":"Blocked: script path outside ~/.hermes/scripts/: 'deploy-verify.sh'"},
+{"id":"c1d5931cc726","name":"skill-context-trimmer","schedule":"0 5 * * 0","freq":"weekly Sun 05:00 AEST","repeat":"∞","next":"2026-07-05T05:00:00+10:00","deliver":"local","skills":[],"last":"2026-06-28T05:00:15+10:00","status":"ok","category":"healthy","desc":"Weekly context budget optimiser: identifies bloated skill files, trims verbose sections, and applies context-budget-reduction patches.","note":"no-agent: runs skill-context-trimmer-apply.sh","error":""},
+{"id":"a92db6ee190a","name":"Follow-up reminder — June 29 applications","schedule":"once at 2026-06-29 09:00","freq":"once: Jun 29 2026 09:00 AEST","repeat":"0/1","next":"2026-06-29T09:00:00+10:00","deliver":"origin","skills":[],"last":null,"status":"ok","category":"healthy","desc":"One-shot reminder to follow up on job applications submitted the previous week. Sends a notification with application status to check.","note":"Will auto-clean after firing.","error":""},
+{"id":"abcdf5f6211e","name":"Daily Queue Summary","schedule":"15 8 * * *","freq":"daily 08:15 AEST","repeat":"∞","next":"2026-06-29T08:15:00+10:00","deliver":"origin","skills":[],"last":"2026-06-28T08:15:20+10:00","status":"error","category":"error-api","desc":"Summarizes the daily task queue: pending items, blocked tasks, coach/player status, and dev loop health. Intended for morning briefing consumption.","note":"Two failures: opencode.ai balance empty + delivery target 'webui' not recognized by Hermes delivery system.","error":"HTTP 401: Insufficient balance (opencode.ai) + delivery fail: unknown platform 'webui'"},
+{"id":"e461becc33cf","name":"escalate-stagnant-bugs","schedule":"15,45 * * * *","freq":"twice-hourly (:15, :45)","repeat":"∞","next":"2026-06-28T17:45:00+10:00","deliver":"local","skills":[],"last":"2026-06-28T17:15:24+10:00","status":"error","category":"error-symlink","desc":"Detects bugs that have been stagnant for 3+ dev-loop cycles, escalates them to the Coach for prioritization.","note":"Symlink → dead target. Script file doesn't exist anywhere on disk.","error":"Blocked: script path outside ~/.hermes/scripts/: 'escalate-stagnant-bugs.py'"},
+{"id":"ab4511dbc8b0","name":"gto-wizard-health-check (no-agent)","schedule":"0 */6 * * *","freq":"every 6h","repeat":"∞","next":"2026-06-28T18:00:00+10:00","deliver":"origin","skills":["devops-gto-wizard-deployment","devops-canary-watch"],"last":"2026-06-28T12:09:55+10:00","status":"ok","category":"healthy","desc":"Runs deploy-health-check.sh to verify the GTO Wizard clone's health. Pure script output — no LLM involved. This is the WORKING version.","note":"Workdir: /home/sc/repos/gto-wizard-clone. This is the working duplicate of the LLM version that's failing with 401.","error":""},
+{"id":"64339e205c2a","name":"coach-provider-watchdog","schedule":"*/15 * * * *","freq":"every 15min","repeat":"∞","next":"2026-06-28T17:45:00+10:00","deliver":"local","skills":[],"last":"2026-06-28T17:30:46+10:00","status":"ok","category":"healthy","desc":"Monitors LLM provider availability and pricing for the Coach agent. Detects when a provider is down or too expensive, triggers model fallback.","note":"no-agent: runs coach-fallback-watchdog.py","error":""},
+{"id":"2880db7731a5","name":"dev-knowledge-rebuild","schedule":"0 */6 * * *","freq":"every 6h","repeat":"∞","next":"2026-06-28T18:00:00+10:00","deliver":"local","skills":[],"last":"2026-06-28T12:00:22+10:00","status":"error","category":"error-data","desc":"Rebuilds the developer knowledge store in ChromaDB: indexes all dev-loop task commits, their diffs, and changed files for semantic retrieval.","note":"Script needs dedup before collection.add(). SHA prefix d85a95b appears for multiple tasks.","error":"ChromaDB DuplicateIDError: duplicate ID 'gto-wizard-clone-d85a95b' — same SHA used for multiple entries"},
+{"id":"b50e2d568fe6","name":"coach-model-selector","schedule":"*/15 * * * *","freq":"every 15min","repeat":"∞","next":"2026-06-28T17:45:00+10:00","deliver":"local","skills":[],"last":"2026-06-28T17:30:52+10:00","status":"ok","category":"healthy","desc":"Dynamically selects the best available model for the Coach agent based on current pricing, availability, and task complexity.","note":"no-agent: runs coach-model-router.py","error":""},
+{"id":"91fb5f28f06d","name":"opportunity-radar","schedule":"0 2 * * 0","freq":"weekly Sun 02:00 AEST","repeat":"∞","next":"2026-07-05T02:00:00+10:00","deliver":"origin","skills":[],"last":null,"status":"ok","category":"healthy","desc":"Weekly Grand SIE opportunity scan: analyzes GitHub trending, job postings, OSS gaps, and market signals to surface high-value opportunities.","note":"no-agent: runs scripts/opportunity-radar.py. Grand SIE component.","error":""},
+{"id":"8a57d7393f8c","name":"dev-loop-telescope","schedule":"0 */6 * * *","freq":"every 6h","repeat":"∞","next":"2026-06-28T18:00:00+10:00","deliver":"discord","skills":[],"last":null,"status":"ok","category":"healthy","desc":"Aggregates dev-loop metrics across all tracked projects: commits, PRs, bugs, test coverage, and velocity trends. Delivers to Discord.","note":"no-agent: runs telescope-report.py. Discord delivery.","error":""},
+{"id":"d948ab773678","name":"dev-loop-staleness-check","schedule":"58 * * * *","freq":"hourly at :58","repeat":"∞","next":"2026-06-28T17:58:00+10:00","deliver":"discord","skills":[],"last":"2026-06-28T16:58:24+10:00","status":"error","category":"healthy","desc":"Checks master checkpoint freshness (≤3h threshold) and stagnant bug count. Exits code 1 by design as an alerting mechanism when issues are found.","note":"Exit 1 = intentional alerting, NOT a crash. Detected 3.9h master staleness + 1 stagnant bug. Working as designed.","error":""},
+{"id":"f5c915150c7a","name":"dev-loop-eval-baseline","schedule":"0 0 * * 0","freq":"weekly Sun 00:00 AEST","repeat":"∞","next":"2026-07-05T00:00:00+10:00","deliver":"discord","skills":[],"last":null,"status":"ok","category":"healthy","desc":"Weekly eval baseline: runs lm-eval-harness against reference models on the dev-loop task suite to benchmark capability over time.","note":"no-agent: runs eval-harness-cron.py. Discord delivery.","error":""},
+{"id":"bf9d66f13b3a","name":"skill-curation-evaluate","schedule":"0 2 * * 0","freq":"weekly Sun 02:00 AEST","repeat":"∞","next":"2026-07-05T02:00:00+10:00","deliver":"local","skills":["hermes-agent","hermes-agent-skill-authoring","find-skills"],"last":null,"status":"ok","category":"healthy","desc":"Weekly skill curation evaluation: scores candidate skills, measures context budget impact, produces curation recommendation report.","note":"LLM-driven with 3 skills. Runs 1h after skill-curation-discover.","error":""},
+{"id":"a7a1d1498843","name":"skill-curation-discover","schedule":"0 1 * * 0","freq":"weekly Sun 01:00 AEST","repeat":"∞","next":"2026-07-05T01:00:00+10:00","deliver":"local","skills":[],"last":null,"status":"ok","category":"healthy","desc":"Weekly skill discovery pipeline step 1: scans repos, session logs, and external sources for candidate skills. Feeds into skill-curation-evaluate.","note":"no-agent: runs skill-curation.py. Prequel to skill-curation-evaluate.","error":""}
+];
+
+// Categories for display grouping
+const CAT_MAP = {
+  'healthy': { label: 'Healthy', cls: 'ok' },
+  'error-symlink': { label: 'Dead Symlink', cls: 'dead' },
+  'error-api': { label: 'API / Auth / Budget', cls: 'err' },
+  'error-network': { label: 'Network Error', cls: 'warn' },
+  'error-data': { label: 'Data Bug', cls: 'err' },
+};
+
+function fmtTime(iso) {
+  if (!iso) return '—';
+  try {
+    const d = new Date(iso);
+    return d.toLocaleString('en-AU', { day:'numeric', month:'short', hour:'2-digit', minute:'2-digit', hour12:false });
+  } catch { return iso; }
+}
+
+function renderJobs(filter, query) {
+  const list = document.getElementById('job-list');
+  let html = '';
+  const q = query.toLowerCase();
+
+  for (const j of JOBS) {
+    if (filter !== 'all' && filter !== 'error') {
+      if (j.category !== filter) continue;
+    } else if (filter === 'error') {
+      if (j.category === 'healthy') continue;
+    } else if (filter === 'all') {
+      // pass
+    }
+    if (q && !j.name.toLowerCase().includes(q) && !j.id.includes(q) && !(j.desc||'').toLowerCase().includes(q)) continue;
+
+    const cat = CAT_MAP[j.category] || { label: j.category, cls: 'ok' };
+    const statusBadge = j.status === 'ok' ? '<span class="badge ok">OK</span>' : '<span class="badge err">ERROR</span>';
+    const deliverBadge = `<span class="tag deliver">${j.deliver}</span>`;
+    const noAgentTag = (j.skills||[]).length === 0 && j.status === 'ok' ? '<span class="no-agent-tag">no-agent</span>' : '';
+    const skillsHtml = (j.skills||[]).map(s => `<span class="skill-tag">${s}</span>`).join('');
+
+    const errorHtml = j.error ? `<dd class="error-text">🔴 ${j.error}</dd>` : '';
+    const noteHtml = j.note ? `<dd style="color:var(--warn);grid-column:1/-1;font-size:0.73rem;margin-top:4px">⚠ ${j.note}</dd>` : '';
+
+    html += `
+    <div class="job-card" data-category="${j.category}">
+      <div class="job-header">
+        <div>
+          <div class="job-name">${j.name}</div>
+          <div class="job-id">${j.id}</div>
+        </div>
+        <div class="job-meta">
+          ${statusBadge}
+          ${deliverBadge}
+          ${noAgentTag}
+          <span class="badge ${cat.cls}">${cat.label}</span>
+        </div>
+      </div>
+      <div class="job-desc">${j.desc}</div>
+      <div class="job-skills">${skillsHtml}</div>
+      <dl class="job-detail">
+        <dt>Schedule</dt><dd>${j.schedule} <span style="color:var(--text-dim)">(${j.freq})</span></dd>
+        <dt>Next Run</dt><dd>${fmtTime(j.next)}</dd>
+        <dt>Last Run</dt><dd>${fmtTime(j.last)}</dd>
+        <dt>Repeat</dt><dd>${j.repeat}</dd>
+        ${errorHtml}
+        ${noteHtml}
+      </dl>
+    </div>`;
+  }
+  list.innerHTML = html || '<div style="text-align:center;padding:40px;color:var(--text-dim)">No jobs match</div>';
+}
+
+// Filters
+let activeFilter = 'all';
+document.querySelectorAll('.filter-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    activeFilter = btn.dataset.filter;
+    renderJobs(activeFilter, document.getElementById('search').value);
+  });
+});
+
+document.getElementById('search').addEventListener('input', (e) => {
+  renderJobs(activeFilter, e.target.value);
+});
+
+// Timeline
+function renderTimeline() {
+  const now = new Date();
+  const nowH = now.getHours() + now.getMinutes() / 60;
+
+  // Categorize jobs
+  const daily = []; // once or twice per day
+  const subhourly = []; // more than 4x/day
+  const weekly = []; // weekly/monthly
+
+  for (const j of JOBS) {
+    const s = j.schedule;
+    if (s.includes('once')) { weekly.push(j); continue; }
+    if (s.includes('*') && s.split(' ').length === 5) {
+      const parts = s.split(' ');
+      const mins = parts[0].split(',').length;
+      const hasStar = parts[1].includes('*');
+      if (hasStar) { subhourly.push(j); }
+      else { daily.push(j); }
+    } else if (s.startsWith('every') || s.startsWith('*/')) {
+      const match = s.match(/(\d+)m/);
+      if (match && parseInt(match[1]) < 60) subhourly.push(j);
+      else daily.push(j);
+    } else if (s.includes('* * * *')) {
+      subhourly.push(j);
+    } else {
+      weekly.push(j);
+    }
+  }
+
+  function parseHour(schedule) {
+    if (schedule.includes('once')) return null;
+    const parts = schedule.split(' ');
+    if (parts.length >= 2 && /^\d+$/.test(parts[1])) {
+      return parseInt(parts[1]);
+    }
+    // every Nm
+    const m = schedule.match(/every\s+(\d+)m/);
+    if (m) {
+      // approximate: use a fixed reference
+      return (parseInt(m[1]) % 24) || 6;
+    }
+    return null;
+  }
+
+  function renderLane(id, jobs) {
+    const lane = document.getElementById(id);
+    if (!lane) return;
+    const body = lane.querySelector('.lane-body');
+    let dots = '';
+    for (const j of jobs) {
+      const h = parseHour(j.schedule);
+      if (h === null) continue;
+      const left = (h / 24) * 100;
+      const cls = j.status === 'ok' ? 'ok' : 'err';
+      dots += `<div class="timeline-dot ${cls}" style="left:${left}%" title="${j.name} (${j.status})">`;
+    }
+    const nowLeft = (nowH / 24) * 100;
+    dots += `<div class="timeline-now" style="left:${nowLeft}%" title="Now: ${now.toLocaleTimeString('en-AU',{hour:'2-digit',minute:'2-digit'})}"></div>`;
+    body.innerHTML = '<div class="timeline-grid">' + Array(24).fill('<div></div>').join('') + '</div>' + dots;
+  }
+
+  renderLane('lane-daily', daily);
+  renderLane('lane-subhourly', subhourly);
+  renderLane('lane-weekly', weekly);
+}
+
+// Init
+renderJobs('all', '');
+renderTimeline();
+</script>
+
+</body>
+</html>
